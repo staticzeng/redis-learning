@@ -1044,6 +1044,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
+    //AOF_REWRITE和BGSAVE一次只执行一个
     if (server.rdb_child_pid != -1 || server.aof_child_pid != -1 ||
         ldbPendingChildren())
     {
@@ -2238,11 +2239,14 @@ void call(client *c, int flags) {
 
     /* Initialization: clear the flags that must be set by the command on
      * demand, and initialize the array for additional commands propagation. */
+    //清除AOF,REPL,PROP,c->flags由命令函数重新设置
     c->flags &= ~(CLIENT_FORCE_AOF|CLIENT_FORCE_REPL|CLIENT_PREVENT_PROP);
+    //also_propagate属于额外的处理
     redisOpArray prev_also_propagate = server.also_propagate;
     redisOpArrayInit(&server.also_propagate);
 
     /* Call the command. */
+    //dirty的统计在setKey完成之后++
     dirty = server.dirty;
     start = ustime();
     c->cmd->proc(c);
@@ -2279,6 +2283,7 @@ void call(client *c, int flags) {
     }
 
     /* Propagate the command into the AOF and replication link */
+    //client调用call时flags=CMD_CALL_FULL
     if (flags & CMD_CALL_PROPAGATE &&
         (c->flags & CLIENT_PREVENT_PROP) != CLIENT_PREVENT_PROP)
     {
@@ -2286,10 +2291,12 @@ void call(client *c, int flags) {
 
         /* Check if the command operated changes in the data set. If so
          * set for replication / AOF propagation. */
+        //根据dirty设置AOF和REPL
         if (dirty) propagate_flags |= (PROPAGATE_AOF|PROPAGATE_REPL);
 
         /* If the client forced AOF / replication of the command, set
          * the flags regardless of the command effects on the data set. */
+        //client设置了强制也增加到propagate_flags中
         if (c->flags & CLIENT_FORCE_REPL) propagate_flags |= PROPAGATE_REPL;
         if (c->flags & CLIENT_FORCE_AOF) propagate_flags |= PROPAGATE_AOF;
 
@@ -2306,7 +2313,8 @@ void call(client *c, int flags) {
         /* Call propagate() only if at least one of AOF / replication
          * propagation is needed. Note that modules commands handle replication
          * in an explicit way, so we never replicate them automatically. */
-        //AOF和REPLICATION处理
+        //根据propagate_flags进行AOF和REPLICATION处理
+        //propagate中再检查AOF_ON是否设置
         if (propagate_flags != PROPAGATE_NONE && !(c->cmd->flags & CMD_MODULE))
             propagate(c->cmd,c->db->id,c->argv,c->argc,propagate_flags);
     }
@@ -2546,6 +2554,8 @@ int processCommand(client *c) {
         c->cmd->proc != execCommand && c->cmd->proc != discardCommand &&
         c->cmd->proc != multiCommand && c->cmd->proc != watchCommand)
     {
+        //discard会重置mstate.commands=NULL,count=0;exec执行完会调用discard
+        //将指令以multiCmd结构形式放在mstate.commands中
         queueMultiCommand(c);
         addReply(c,shared.queued);
     } else {

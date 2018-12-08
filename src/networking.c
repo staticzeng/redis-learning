@@ -1309,6 +1309,7 @@ int processMultibulkBuffer(client *c) {
                 c->bulklen >= PROTO_MBULK_BIG_ARG &&
                 sdslen(c->querybuf) == (size_t)(c->bulklen+2))
             {
+                //raw编码格式
                 c->argv[c->argc++] = createObject(OBJ_STRING,c->querybuf);
                 sdsIncrLen(c->querybuf,-2); /* remove CRLF */
                 /* Assume that if we saw a fat argument we'll see another one
@@ -1319,6 +1320,7 @@ int processMultibulkBuffer(client *c) {
             } else {
                 //用bulklen创建一个string对象
                 c->argv[c->argc++] =
+                    //embstr|raw格式
                     createStringObject(c->querybuf+pos,c->bulklen);
                 //还要跳过\r\n
                 pos += c->bulklen+2;

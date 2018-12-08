@@ -1,0 +1,13 @@
+client->argv初始解析成字符串embstr或者raw
+
+string 类型长度小于20且能转化为ll的编码为INT编码
+       字符串类型长度小于44就使用embstr编码
+       其余的使用RAW编码
+
+hash   默认创建一个ziplist,当字符串长度大于64就修改encode为hashtable
+
+list   encode为quicklist
+
+set    全部为整型则为intset 否则为hashtable
+
+zet    skiplist或者ziplist

@@ -537,8 +537,9 @@ void hsetCommand(client *c) {
         return;
     }
 
+    //创建一个ziplist结构保存hash
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
-    //判断是否需要从ziplist转变为ht, key或者value的sdslen大于64就修改类型为ht
+    //判断是否需要从ziplist转变为ht, key或者value的sdslen大于64就修改类型为ht.ZIPLIST中entry的prevlen只有一个字节
     hashTypeTryConversion(o,c->argv,2,c->argc-1);
 
     for (i = 2; i < c->argc; i += 2)

@@ -901,6 +901,7 @@ int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi) {
         if (!di) return C_ERR;
 
         /* Write the SELECT DB opcode */
+        //保存db num
         if (rdbSaveType(rdb,RDB_OPCODE_SELECTDB) == -1) goto werr;
         if (rdbSaveLen(rdb,j) == -1) goto werr;
 
@@ -915,18 +916,22 @@ int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi) {
         expires_size = (dictSize(db->expires) <= UINT32_MAX) ?
                                 dictSize(db->expires) :
                                 UINT32_MAX;
+        //保存db中dict和expires的大小
         if (rdbSaveType(rdb,RDB_OPCODE_RESIZEDB) == -1) goto werr;
         if (rdbSaveLen(rdb,db_size) == -1) goto werr;
         if (rdbSaveLen(rdb,expires_size) == -1) goto werr;
 
         /* Iterate this DB writing every entry */
+        //逐个遍历保存db->dict中的key/value pair
         while((de = dictNext(di)) != NULL) {
             sds keystr = dictGetKey(de);
             robj key, *o = dictGetVal(de);
             long long expire;
 
+            //重新生成一个object key编码为raw,指向keystr.并根据key查找expires读取expire信息
             initStaticStringObject(key,keystr);
             expire = getExpire(db,&key);
+            //保存expire的时间基数(毫秒),expire的值.保存type,key,val
             if (rdbSaveKeyValuePair(rdb,&key,o,expire) == -1) goto werr;
 
             /* When this RDB is produced as part of an AOF rewrite, move
@@ -1074,6 +1079,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         int retval;
 
         /* Child */
+        //关闭接收client请求以及cluster监听的socket,关闭unixsocket对应的文件描述符
         closeListeningSockets(0);
         redisSetProcTitle("redis-rdb-bgsave");
         retval = rdbSave(filename,rsi);
