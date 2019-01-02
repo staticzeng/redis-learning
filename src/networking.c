@@ -76,6 +76,7 @@ client *createClient(int fd) {
      * contexts (for instance a Lua script) we need a non connected client. */
     if (fd != -1) {
         anetNonBlock(NULL,fd);
+        //关闭negal算法
         anetEnableTcpNoDelay(NULL,fd);
         if (server.tcpkeepalive)
             //开启keepalive,设置300秒没有响应就发送三次keepalive的心跳包每隔100秒发送一次 
@@ -845,6 +846,7 @@ void freeClient(client *c) {
     /* Unlink the client: this will close the socket, remove the I/O
      * handlers, and remove references of the client from different
      * places where active clients may be referenced. */
+    //删除读写事件
     unlinkClient(c);
 
     /* Master/slave cleanup Case 1:
@@ -1432,6 +1434,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
      * Redis Object representing the argument. */
     //会根据客户端类型确定一次reqtype,当前client一般为MULTIBULK
     //针对32K的大参数扩展读取长度为该参数大小
+    //参数没有读完会在参数解析的时候返回
     if (c->reqtype == PROTO_REQ_MULTIBULK && c->multibulklen && c->bulklen != -1
         && c->bulklen >= PROTO_MBULK_BIG_ARG)
     {
@@ -1448,6 +1451,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
     nread = read(fd, c->querybuf+qblen, readlen);
     if (nread == -1) {
+        //no data avaliable error for non block io
         if (errno == EAGAIN) {
             return;
         } else {

@@ -1615,7 +1615,7 @@ void syncWithMaster(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 
     /* Send a PING to check the master is able to reply without errors. */
-    //因为监听写事件,所以会立刻调用,推动状态前进.删掉写事件,更新状态,同步发送PING消息
+    //因为监听写事件,connect返回后会立刻调用,推动状态前进.删掉写事件,更新状态,同步发送PING消息
     //写完立刻返回避免阻塞
     if (server.repl_state == REPL_STATE_CONNECTING) {
         serverLog(LL_NOTICE,"Non blocking connect for SYNC fired the event.");
@@ -1898,6 +1898,7 @@ int connectWithMaster(void) {
     }
 
     //创建到master的连接处理,设置fd处理函数为syncWithMaster
+    //非阻塞connect返回的情况下不一定马上可写
     if (aeCreateFileEvent(server.el,fd,AE_READABLE|AE_WRITABLE,syncWithMaster,NULL) ==
             AE_ERR)
     {
@@ -2537,6 +2538,7 @@ long long replicationGetSlaveOffset(void) {
 
 /* Replication cron function, called 1 time per second. */
 void replicationCron(void) {
+    //static变量，执行完++
     static long long replication_cron_loops = 0;
 
     /* Non blocking connection timeout? */

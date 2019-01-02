@@ -1354,6 +1354,7 @@ void initServerConfig(void) {
     clearReplicationId2();
     server.configfile = NULL;
     server.executable = NULL;
+    //HZ=10
     server.hz = CONFIG_DEFAULT_HZ;
     server.arch_bits = (sizeof(long) == 8) ? 64 : 32;
     server.port = CONFIG_DEFAULT_SERVER_PORT;
@@ -2439,6 +2440,7 @@ int processCommand(client *c) {
      * keys in the dataset). If there are not the only thing we can do
      * is returning an error. */
     //检查是否要进行内存回收
+    //默认为0
     if (server.maxmemory) {
         int retval = freeMemoryIfNeeded();
         /* freeMemoryIfNeeded may flush slave output buffers. This may result
