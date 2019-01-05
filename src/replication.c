@@ -569,6 +569,7 @@ need_full_resync:
  * Returns C_OK on success or C_ERR otherwise. */
 int startBgsaveForReplication(int mincapa) {
     int retval;
+    //repl_diskless_sync默认是0,所以socket_target为0
     int socket_target = server.repl_diskless_sync && (mincapa & SLAVE_CAPA_EOF);
     listIter li;
     listNode *ln;
@@ -584,6 +585,7 @@ int startBgsaveForReplication(int mincapa) {
         if (socket_target)
             retval = rdbSaveToSlavesSockets(rsiptr);
         else
+            //启动save to disk
             retval = rdbSaveBackground(server.rdb_filename,rsiptr);
     } else {
         serverLog(LL_WARNING,"BGSAVE for replication: replication information not available, can't generate the RDB file right now. Try later.");
@@ -759,6 +761,7 @@ void syncCommand(client *c) {
             /* Target is disk (or the slave is not capable of supporting
              * diskless replication) and we don't have a BGSAVE in progress,
              * let's start one. */
+            //这里启动一个background save to disk
             if (server.aof_child_pid == -1) {
                 startBgsaveForReplication(c->slave_capa);
             } else {
@@ -816,6 +819,7 @@ void replconfCommand(client *c) {
             if (!strcasecmp(c->argv[j+1]->ptr,"eof"))
                 c->slave_capa |= SLAVE_CAPA_EOF;
             else if (!strcasecmp(c->argv[j+1]->ptr,"psync2"))
+                //设置slave_capa用于replcation类型设置
                 c->slave_capa |= SLAVE_CAPA_PSYNC2;
         } else if (!strcasecmp(c->argv[j]->ptr,"ack")) {
             /* REPLCONF ACK is used by slave to inform the master the amount
@@ -954,6 +958,10 @@ void updateSlavesWaitingBgsave(int bgsaveerr, int type) {
     listIter li;
 
     listRewind(server.slaves,&li);
+    //如果有还处于等待bgsave开始的client就设置startbgsave与minicapa等循环结束再启动一个bgsave进程
+    //如果slave处于等待bgsave结束则根据type进行处理
+    //type=socket则表示已经同步到了slave中，此时将slave标记上线
+    //type=disk则再建立发送程序将保存的文件同步到slave中去
     while((ln = listNext(&li))) {
         client *slave = ln->value;
 
@@ -1000,6 +1008,7 @@ void updateSlavesWaitingBgsave(int bgsaveerr, int type) {
                     (unsigned long long) slave->repldbsize);
 
                 aeDeleteFileEvent(server.el,slave->fd,AE_WRITABLE);
+                //启动sendBulkToSlave同步到slave中去
                 if (aeCreateFileEvent(server.el, slave->fd, AE_WRITABLE, sendBulkToSlave, slave) == AE_ERR) {
                     freeClient(slave);
                     continue;
@@ -2542,6 +2551,8 @@ void replicationCron(void) {
     static long long replication_cron_loops = 0;
 
     /* Non blocking connection timeout? */
+    //前面这些超时检查都时slave需要做的,后面master也需要做超时关闭处理
+    //再协议交互过程中超时
     if (server.masterhost &&
         (server.repl_state == REPL_STATE_CONNECTING ||
          //从收到PONG到PSYNC之间都属于handshake阶段
@@ -2553,6 +2564,7 @@ void replicationCron(void) {
     }
 
     /* Bulk transfer I/O timeout? */
+    //传输过程中出现超时
     if (server.masterhost && server.repl_state == REPL_STATE_TRANSFER &&
         (time(NULL)-server.repl_transfer_lastio) > server.repl_timeout)
     {
@@ -2561,6 +2573,7 @@ void replicationCron(void) {
     }
 
     /* Timed out master when we are an already connected slave? */
+    //已连接过程中超时
     if (server.masterhost && server.repl_state == REPL_STATE_CONNECTED &&
         (time(NULL)-server.master->lastinteraction) > server.repl_timeout)
     {
@@ -2581,6 +2594,7 @@ void replicationCron(void) {
     /* Send ACK to master from time to time.
      * Note that we do not send periodic acks to masters that don't
      * support PSYNC and replication offsets. */
+    //支持PSYNC的master需要定时回复replconf ack
     if (server.masterhost && server.master &&
         !(server.master->flags & CLIENT_PRE_PSYNC))
         replicationSendAck();
@@ -2594,6 +2608,7 @@ void replicationCron(void) {
     robj *ping_argv[1];
 
     /* First, send PING according to ping_slave_period. */
+    //master每十个执行周期ping一次,具体事件间隔为1s
     if ((replication_cron_loops % server.repl_ping_slave_period) == 0 &&
         listLength(server.slaves))
     {
@@ -2634,6 +2649,7 @@ void replicationCron(void) {
     }
 
     /* Disconnect timedout slaves. */
+    //master关闭超时的slave
     if (listLength(server.slaves)) {
         listIter li;
         listNode *ln;

@@ -1726,6 +1726,7 @@ void backgroundSaveDoneHandlerDisk(int exitcode, int bysignal) {
     server.rdb_save_time_start = -1;
     /* Possibly there are slaves waiting for a BGSAVE in order to be served
      * (the first stage of SYNC is a bulk transfer of dump.rdb) */
+    //在这里将rbd文件传输给等待save结束的slaves
     updateSlavesWaitingBgsave((!bysignal && exitcode == 0) ? C_OK : C_ERR, RDB_CHILD_TYPE_DISK);
 }
 
@@ -1828,6 +1829,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
 void backgroundSaveDoneHandler(int exitcode, int bysignal) {
     switch(server.rdb_child_type) {
     case RDB_CHILD_TYPE_DISK:
+        //默认情况下都是磁盘type
         backgroundSaveDoneHandlerDisk(exitcode,bysignal);
         break;
     case RDB_CHILD_TYPE_SOCKET:

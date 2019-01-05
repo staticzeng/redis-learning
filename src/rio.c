@@ -174,8 +174,11 @@ static size_t rioFdsetWrite(rio *r, const void *buf, size_t len) {
 
     /* To start we always append to our buffer. If it gets larger than
      * a given size, we actually write to the sockets. */
+    //write操作先将需要写的数据放到rio的buf中
+    //如果追加之后大于PROTO_IOBUF_LEN的大小就进行flush操作
     if (len) {
         r->io.fdset.buf = sdscatlen(r->io.fdset.buf,buf,len);
+        //这里重置len,避免没有do_flush而进入while进行写
         len = 0; /* Prevent entering the while below if we don't flush. */
         if (sdslen(r->io.fdset.buf) > PROTO_IOBUF_LEN) doflush = 1;
     }
@@ -245,6 +248,7 @@ static off_t rioFdsetTell(rio *r) {
 
 /* Flushes any buffer to target device if applicable. Returns 1 on success
  * and 0 on failures. */
+//flush通过NULL和0参数控制进行实际写操作
 static int rioFdsetFlush(rio *r) {
     /* Our flush is implemented by the write method, that recognizes a
      * buffer set to NULL with a count of zero as a flush request. */

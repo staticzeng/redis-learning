@@ -1052,9 +1052,11 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         pid_t pid;
 
         if ((pid = wait3(&statloc,WNOHANG,NULL)) != 0) {
+            //获取exitcode,成功为0
             int exitcode = WEXITSTATUS(statloc);
             int bysignal = 0;
 
+            //获取导致异常结束的信号值
             if (WIFSIGNALED(statloc)) bysignal = WTERMSIG(statloc);
 
             if (pid == -1) {
@@ -1064,6 +1066,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                     (int) server.rdb_child_pid,
                     (int) server.aof_child_pid);
             } else if (pid == server.rdb_child_pid) {
+                //rdb完成之后操作
                 backgroundSaveDoneHandler(exitcode,bysignal);
                 if (!bysignal && exitcode == 0) receiveChildInfo();
             } else if (pid == server.aof_child_pid) {
