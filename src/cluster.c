@@ -647,6 +647,7 @@ void clusterAcceptHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
          * node identity. */
         link = createClusterLink(NULL);
         link->fd = cfd;
+        //作为server安装集群处理函数clusterReadHandler
         aeCreateFileEvent(server.el,cfd,AE_READABLE,clusterReadHandler,link);
     }
 }
@@ -1325,6 +1326,8 @@ int clusterStartHandshake(char *ip, int port, int cport) {
     /* Add the node with a random address (NULL as first argument to
      * createClusterNode()). Everything will be fixed during the
      * handshake. */
+    //创建node,设置flag为CLUSTER_NODE_HANDSHAKE|CLUSTER_NODE_MEET, MEET稍后需要特殊处理
+    //进行ip,端口的设置
     n = createClusterNode(NULL,CLUSTER_NODE_HANDSHAKE|CLUSTER_NODE_MEET);
     memcpy(n->ip,norm_ip,sizeof(n->ip));
     n->port = port;
@@ -4111,6 +4114,7 @@ void clusterCommand(client *c) {
         /* CLUSTER MEET <ip> <port> [cport] */
         long long port, cport;
 
+        //解析port和cport
         if (getLongLongFromObject(c->argv[3], &port) != C_OK) {
             addReplyErrorFormat(c,"Invalid TCP base port specified: %s",
                                 (char*)c->argv[3]->ptr);

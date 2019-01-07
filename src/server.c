@@ -1092,6 +1092,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
              * the given amount of seconds, and if the latest bgsave was
              * successful or if, in case of an error, at least
              * CONFIG_BGSAVE_RETRY_DELAY seconds already elapsed. */
+            //通过比较dirty和最后save的时间到当前的时间差决定是否启动一次bgsave
             if (server.dirty >= sp->changes &&
                 server.unixtime-server.lastsave > sp->seconds &&
                 (server.unixtime-server.lastbgsave_try >
@@ -1146,9 +1147,11 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Replication cron function -- used to reconnect to master,
      * detect transfer failures, start background RDB transfers and so forth. */
+    //复制集的定时处理
     run_with_period(1000) replicationCron();
 
     /* Run the Redis Cluster cron. */
+    //集群的定时处理
     run_with_period(100) {
         if (server.cluster_enabled) clusterCron();
     }
@@ -1231,6 +1234,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
         processUnblockedClients();
 
     /* Write the AOF buffer on disk */
+    //根据配置策略写磁盘
     flushAppendOnlyFile(0);
 
     /* Handle writes with pending output buffers. */
@@ -2255,6 +2259,7 @@ void call(client *c, int flags) {
     start = ustime();
     c->cmd->proc(c);
     duration = ustime()-start;
+    //执行完之后是否还是dirty的
     dirty = server.dirty-dirty;
     if (dirty < 0) dirty = 0;
 

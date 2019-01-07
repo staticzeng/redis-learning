@@ -1052,6 +1052,7 @@ int rdbSave(char *filename, rdbSaveInfo *rsi) {
     }
 
     serverLog(LL_NOTICE,"DB saved on disk");
+    //保存到磁盘之后就会重置dirty=0
     server.dirty = 0;
     server.lastsave = time(NULL);
     server.lastbgsave_status = C_OK;
