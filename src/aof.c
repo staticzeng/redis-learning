@@ -200,6 +200,7 @@ ssize_t aofRewriteBufferWrite(int fd) {
 /* Starts a background task that performs fsync() against the specified
  * file descriptor (the one of the AOF file) in another thread. */
 void aof_background_fsync(int fd) {
+    //设置BIO_AOF_FSYNC类型任务,这个会影响下一次sync_in_process的状态
     bioCreateBackgroundJob(BIO_AOF_FSYNC,(void*)(long)fd,NULL,NULL);
 }
 
@@ -338,10 +339,12 @@ void flushAppendOnlyFile(int force) {
     if (server.aof_fsync == AOF_FSYNC_EVERYSEC)
         sync_in_progress = bioPendingJobsOfType(BIO_AOF_FSYNC) != 0;
 
+    //每秒同步一次且没有设置强制同步
     if (server.aof_fsync == AOF_FSYNC_EVERYSEC && !force) {
         /* With this append fsync policy we do background fsyncing.
          * If the fsync is still in progress we can try to delay
          * the write for a couple of seconds. */
+        //如果已经开始了一个刷新
         if (sync_in_progress) {
             if (server.aof_flush_postponed_start == 0) {
                 /* No previous write postponing, remember that we are
@@ -365,6 +368,8 @@ void flushAppendOnlyFile(int force) {
      * there is much to do about the whole server stopping for power problems
      * or alike */
 
+    //将aof_buf写到aof_fd里面去
+    //写文件还不能保证数据不丢失,刷到磁盘才是王道
     latencyStartMonitor(latency);
     nwritten = aofWrite(server.aof_fd,server.aof_buf,sdslen(server.aof_buf));
     latencyEndMonitor(latency);
@@ -385,17 +390,20 @@ void flushAppendOnlyFile(int force) {
     /* We performed the write so reset the postponed flush sentinel to zero. */
     server.aof_flush_postponed_start = 0;
 
+    //nwritten != buflength一般是出现了异常情况
     if (nwritten != (ssize_t)sdslen(server.aof_buf)) {
         static time_t last_write_error_log = 0;
         int can_log = 0;
 
         /* Limit logging rate to 1 line per AOF_WRITE_LOG_ERROR_RATE seconds. */
+        //控制日志频率
         if ((server.unixtime - last_write_error_log) > AOF_WRITE_LOG_ERROR_RATE) {
             can_log = 1;
             last_write_error_log = server.unixtime;
         }
 
         /* Log the AOF write error and record the error code. */
+        //一点都没有写进去
         if (nwritten == -1) {
             if (can_log) {
                 serverLog(LL_WARNING,"Error writing to the AOF file: %s",
@@ -403,6 +411,7 @@ void flushAppendOnlyFile(int force) {
                 server.aof_last_write_errno = errno;
             }
         } else {
+            //写了一部分进去
             if (can_log) {
                 serverLog(LL_WARNING,"Short write while writing to "
                                        "the AOF file: (nwritten=%lld, "
@@ -411,6 +420,7 @@ void flushAppendOnlyFile(int force) {
                                        (long long)sdslen(server.aof_buf));
             }
 
+            //调整文件大小为aof_current_size,此时还没有调整aof_current_size所以算是丢弃了此次write
             if (ftruncate(server.aof_fd, server.aof_current_size) == -1) {
                 if (can_log) {
                     serverLog(LL_WARNING, "Could not remove short write "
@@ -457,10 +467,12 @@ void flushAppendOnlyFile(int force) {
             server.aof_last_write_status = C_OK;
         }
     }
+    //增加aof_current_size的大小
     server.aof_current_size += nwritten;
 
     /* Re-use AOF buffer when it is small enough. The maximum comes from the
      * arena size of 4k minus some overhead (but is otherwise arbitrary). */
+    //小于4K的时候不释放内存只设置长度,大于4K就回收掉
     if ((sdslen(server.aof_buf)+sdsavail(server.aof_buf)) < 4000) {
         sdsclear(server.aof_buf);
     } else {
@@ -475,16 +487,19 @@ void flushAppendOnlyFile(int force) {
             return;
 
     /* Perform the fsync if needed. */
+    //每次都刷新,保证数据一致
     if (server.aof_fsync == AOF_FSYNC_ALWAYS) {
         /* aof_fsync is defined as fdatasync() for Linux in order to avoid
          * flushing metadata. */
         latencyStartMonitor(latency);
+        //wrapper of fdatasync
         aof_fsync(server.aof_fd); /* Let's try to get this data on the disk */
         latencyEndMonitor(latency);
         latencyAddSampleIfNeeded("aof-fsync-always",latency);
         server.aof_last_fsync = server.unixtime;
     } else if ((server.aof_fsync == AOF_FSYNC_EVERYSEC &&
                 server.unixtime > server.aof_last_fsync)) {
+        //每一秒刷一次,检查事件间隔是否满足
         if (!sync_in_progress) aof_background_fsync(server.aof_fd);
         server.aof_last_fsync = server.unixtime;
     }
@@ -1212,6 +1227,7 @@ int rewriteAppendOnlyFile(char *filename) {
     if (server.aof_rewrite_incremental_fsync)
         rioSetAutoSync(&aof,AOF_AUTOSYNC_BYTES);
 
+    //aof rdb混用
     if (server.aof_use_rdb_preamble) {
         int error;
         if (rdbSaveRio(&aof,&error,RDB_SAVE_AOF_PREAMBLE,NULL) == C_ERR) {
@@ -1219,6 +1235,7 @@ int rewriteAppendOnlyFile(char *filename) {
             goto werr;
         }
     } else {
+        //利用cow将数据库以指令的形式重写了一遍
         if (rewriteAppendOnlyFileRio(&aof) == C_ERR) goto werr;
     }
 
@@ -1243,6 +1260,7 @@ int rewriteAppendOnlyFile(char *filename) {
         }
         nodata = 0; /* Start counting from zero, we stop on N *contiguous*
                        timeouts. */
+        //读取管道中的数据到aof_diff sds中
         aofReadDiffFromParent();
     }
 
@@ -1253,11 +1271,13 @@ int rewriteAppendOnlyFile(char *filename) {
     /* We read the ACK from the server using a 10 seconds timeout. Normally
      * it should reply ASAP, but just in case we lose its reply, we are sure
      * the child will eventually get terminated. */
+    //收到一个！表示父进程同意关掉发送
     if (syncRead(server.aof_pipe_read_ack_from_parent,&byte,1,5000) != 1 ||
         byte != '!') goto werr;
     serverLog(LL_NOTICE,"Parent agreed to stop sending diffs. Finalizing AOF...");
 
     /* Read the final diff if any. */
+    //再读一次,保证协商关闭时的数据完整性
     aofReadDiffFromParent();
 
     /* Write the received diff to the file. */

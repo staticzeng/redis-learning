@@ -100,6 +100,7 @@ void bioInit(void) {
     int j;
 
     /* Initialization of state vars and objects */
+    //初始化每个类型对应的互斥量、信号量以及任务队列
     for (j = 0; j < BIO_NUM_OPS; j++) {
         pthread_mutex_init(&bio_mutex[j],NULL);
         pthread_cond_init(&bio_newjob_cond[j],NULL);
@@ -120,6 +121,7 @@ void bioInit(void) {
      * responsible of. */
     for (j = 0; j < BIO_NUM_OPS; j++) {
         void *arg = (void*)(unsigned long) j;
+        //用不同的type参数以及bioProcessBackgroundJobs生成线程
         if (pthread_create(&thread,&attr,bioProcessBackgroundJobs,arg) != 0) {
             serverLog(LL_WARNING,"Fatal: Can't initialize Background Jobs.");
             exit(1);
@@ -131,10 +133,12 @@ void bioInit(void) {
 void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     struct bio_job *job = zmalloc(sizeof(*job));
 
+    //arg1是fd
     job->time = time(NULL);
     job->arg1 = arg1;
     job->arg2 = arg2;
     job->arg3 = arg3;
+    //将job添加到对应的链表中,然后唤醒等待在信号量上的线程
     pthread_mutex_lock(&bio_mutex[type]);
     listAddNodeTail(bio_jobs[type],job);
     bio_pending[type]++;
@@ -142,6 +146,7 @@ void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
     pthread_mutex_unlock(&bio_mutex[type]);
 }
 
+//arg表示bio类型
 void *bioProcessBackgroundJobs(void *arg) {
     struct bio_job *job;
     unsigned long type = (unsigned long) arg;
@@ -172,6 +177,7 @@ void *bioProcessBackgroundJobs(void *arg) {
         listNode *ln;
 
         /* The loop always starts with the lock hold. */
+        //检查任务队列是否有任务需要执行,没有就等待信号量通知
         if (listLength(bio_jobs[type]) == 0) {
             pthread_cond_wait(&bio_newjob_cond[type],&bio_mutex[type]);
             continue;
@@ -184,6 +190,7 @@ void *bioProcessBackgroundJobs(void *arg) {
         pthread_mutex_unlock(&bio_mutex[type]);
 
         /* Process the job accordingly to its type. */
+        //根据不同类型执行响应的处理
         if (type == BIO_CLOSE_FILE) {
             close((long)job->arg1);
         } else if (type == BIO_AOF_FSYNC) {
@@ -209,6 +216,7 @@ void *bioProcessBackgroundJobs(void *arg) {
 
         /* Lock again before reiterating the loop, if there are no longer
          * jobs to process we'll block again in pthread_cond_wait(). */
+        //在下一次拿到锁之后删除前一次执行完的任务,紧接着再进行任务链表检查
         pthread_mutex_lock(&bio_mutex[type]);
         listDelNode(bio_jobs[type],ln);
         bio_pending[type]--;

@@ -1070,6 +1070,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                 backgroundSaveDoneHandler(exitcode,bysignal);
                 if (!bysignal && exitcode == 0) receiveChildInfo();
             } else if (pid == server.aof_child_pid) {
+                //aofrewrite完成之后执行，主要是根据退出的进程ID找到最新的aof文件进行改名和aof_fd切换
                 backgroundRewriteDoneHandler(exitcode,bysignal);
                 if (!bysignal && exitcode == 0) receiveChildInfo();
             } else {
@@ -1109,6 +1110,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
          }
 
          /* Trigger an AOF rewrite if needed. */
+         //通过检查配置这里也会触发aof_rewrite
          if (server.aof_state == AOF_ON &&
              server.rdb_child_pid == -1 &&
              server.aof_child_pid == -1 &&
